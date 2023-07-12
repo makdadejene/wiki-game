@@ -1,5 +1,8 @@
 open! Core
+module Link = String
 
+(* We separate out the [Network] module to represent our social network in
+   OCaml types. *)
 (* [get_linked_articles] should return a list of wikipedia article lengths
    contained in the input.
 
@@ -53,13 +56,84 @@ let print_links_command =
    a DOT file. It should use the [how_to_fetch] argument along with
    [File_fetcher] to fetch the articles so that the implementation can be
    tested locally on the small dataset in the ../resources/wiki directory. *)
-let visualize ?(max_depth = 3) ~origin ~output_file ~how_to_fetch () : unit =
-  ignore (max_depth : int);
-  ignore (origin : string);
-  ignore (output_file : File_path.t);
-  ignore (how_to_fetch : File_fetcher.How_to_fetch.t);
-  failwith "TODO"
+
+let rec find_pages origin ~(curr_depth : int) ~how_to_fetch =
+  if not (curr_depth = 0)
+  then (
+    let new_file = File_fetcher.fetch_exn how_to_fetch ~resource:origin in
+    let linked_articles = get_linked_articles new_file in
+    List.concat_map linked_articles ~f:(fun link ->
+      [ origin, link ]
+      @ find_pages link ~curr_depth:(curr_depth - 1) ~how_to_fetch))
+  else []
 ;;
+
+module G = Graph.Imperative.Graph.Concrete (Link)
+
+(* We extend our [Graph] structure with the [Dot] API so that we can easily
+   render constructed graphs. Documentation about this API can be found here:
+   https://github.com/backtracking/ocamlgraph/blob/master/src/dot.mli *)
+module Dot = Graph.Graphviz.Dot (struct
+  include G
+
+  (* These functions can be changed to tweak the appearance of the generated
+     graph. Check out the ocamlgraph graphviz API
+     (https://github.com/backtracking/ocamlgraph/blob/master/src/graphviz.mli)
+     for examples of what values can be set here. *)
+  let edge_attributes _ = [ `Dir `Forward ]
+  let default_edge_attributes _ = []
+  let get_subgraph _ = None
+  let vertex_attributes v = [ `Shape `Box; `Label v; `Fillcolor 1000 ]
+  let vertex_name v = v
+  let default_vertex_attributes _ = []
+  let graph_attributes _ = []
+end)
+
+let visualize ?(max_depth = 3) ~origin ~output_file ~how_to_fetch () : unit =
+  let pages = find_pages origin ~curr_depth:max_depth ~how_to_fetch in
+  let graph = G.create () in
+  List.iter pages ~f:(fun (link1, link2) ->
+    let link1 =
+      String.substr_replace_all
+        (String.substr_replace_all
+           (String.substr_replace_all
+              (String.substr_replace_all
+                 (String.substr_replace_all link1 ~pattern:"/" ~with_:"")
+                 ~pattern:"."
+                 ~with_:"")
+              ~pattern:" "
+              ~with_:"")
+           ~pattern:"("
+           ~with_:"")
+        ~pattern:")"
+        ~with_:""
+    in
+    let link2 =
+      String.substr_replace_all
+        (String.substr_replace_all
+           (String.substr_replace_all
+              (String.substr_replace_all
+                 (String.substr_replace_all link2 ~pattern:"/" ~with_:"")
+                 ~pattern:"."
+                 ~with_:"")
+              ~pattern:" "
+              ~with_:"")
+           ~pattern:"("
+           ~with_:"")
+        ~pattern:")"
+        ~with_:""
+    in
+    (* [G.add_edge] auomatically adds the endpoints as vertices in the graph
+       if they don't already exist. *)
+    G.add_edge graph link1 link2);
+  Dot.output_graph
+    (Out_channel.create (File_path.to_string output_file))
+    graph
+;;
+
+(* ignore (max_depth : int); ignore (origin : string); ignore (output_file :
+   File_path.t); ignore (how_to_fetch : File_fetcher.How_to_fetch.t);
+   failwith "TODO" *)
 
 let visualize_command =
   let open Command.Let_syntax in
