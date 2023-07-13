@@ -89,6 +89,14 @@ module Dot = Graph.Graphviz.Dot (struct
   let graph_attributes _ = []
 end)
 
+(* let clean_string old_string = String. String.substr_replace_all
+   (String.substr_replace_all (String.substr_replace_all
+   (String.substr_replace_all (String.substr_replace_all old_string
+   ~pattern:"/" ~with_:"") ~pattern:"." ~with_:"") ~pattern:" " ~with_:"")
+   ~pattern:"(" ~with_:"") ~pattern:")" ~with_:""
+
+   ; *)
+
 let visualize ?(max_depth = 3) ~origin ~output_file ~how_to_fetch () : unit =
   let pages = find_pages origin ~curr_depth:max_depth ~how_to_fetch in
   let graph = G.create () in
