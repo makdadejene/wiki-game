@@ -25,7 +25,11 @@ let get_linked_articles contents : string list =
   parse contents
   $$ "a[href]"
   |> filter (fun x ->
-       let curr_link = R.attribute "href" x in
+       let curr_link =
+         R.attribute "href" x
+         (* String.substr_replace_all (R.attribute "href" x)
+            ~pattern:"https://en.wikipedia.org" ~with_:"" *)
+       in
        let is_string = String.is_prefix curr_link ~prefix:"/wiki/" in
        if is_string
        then (
@@ -68,6 +72,50 @@ let rec find_pages origin ~(curr_depth : int) ~how_to_fetch =
   else []
 ;;
 
+(* let actual_link link = if String.is_substring link
+   ~substring:"https://en.wikipedia.org" then link else
+   "https://en.wikipedia.org" ^ link ;; *)
+
+let dfs start_node destination visited max_depth how_to_fetch =
+  let solution = ref [] in
+  let rec dfs curr_node destination visited max_depth how_to_fetch =
+    if not (max_depth = 0)
+    then (
+      let new_file =
+        File_fetcher.fetch_exn how_to_fetch ~resource:curr_node
+      in
+      let linked_articles = get_linked_articles new_file in
+      Hash_set.add visited curr_node;
+      let sol =
+        List.find_map linked_articles ~f:(fun link ->
+          if not (Hash_set.mem visited link)
+          then
+            if String.equal link destination
+            then Some link
+            else dfs link destination visited (max_depth - 1) how_to_fetch
+          else None)
+      in
+      match sol with
+      | None -> None
+      | Some pos ->
+        (* print_s [%message (pos : Position.t)]; *)
+        solution := pos :: !solution;
+        Some curr_node)
+    else None
+  in
+  match dfs start_node destination visited max_depth how_to_fetch with
+  | Some pos -> pos :: !solution
+  | None -> []
+;;
+
+let find_path ~(max_depth : int) ~origin ~destination ~how_to_fetch =
+  let visited = String.Hash_set.create () in
+  dfs origin destination visited max_depth how_to_fetch
+;;
+
+(* ignore (max_depth : int); ignore (origin : string); ignore (destination :
+   string); ignore (how_to_fetch : File_fetcher.How_to_fetch.t); failwith
+   "TODO" *)
 module G = Graph.Imperative.Graph.Concrete (Link)
 
 (* We extend our [Graph] structure with the [Dot] API so that we can easily
@@ -177,13 +225,6 @@ let visualize_command =
 
    [max_depth] is useful to limit the time the program spends exploring the
    graph. *)
-let find_path ?(max_depth = 3) ~origin ~destination ~how_to_fetch () =
-  ignore (max_depth : int);
-  ignore (origin : string);
-  ignore (destination : string);
-  ignore (how_to_fetch : File_fetcher.How_to_fetch.t);
-  failwith "TODO"
-;;
 
 let find_path_command =
   let open Command.Let_syntax in
@@ -203,9 +244,12 @@ let find_path_command =
           ~doc:"INT maximum length of path to search for (default 10)"
       in
       fun () ->
-        match find_path ~max_depth ~origin ~destination ~how_to_fetch () with
-        | None -> print_endline "No path found!"
-        | Some trace -> List.iter trace ~f:print_endline]
+        let path = find_path ~max_depth ~origin ~destination ~how_to_fetch in
+        if List.is_empty path
+        then print_endline "No path found!"
+        else List.iter path ~f:print_endline
+      (* | None -> print_endline "No path found!" | Some trace -> List.iter
+         trace ~f:print_endline] *)]
 ;;
 
 let command =
